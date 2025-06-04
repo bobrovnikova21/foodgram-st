@@ -1,0 +1,47 @@
+version: "3.3"
+
+services:
+  db:
+    container_name: foodgram-db
+    image: postgres:15-alpine
+    restart: always
+    volumes:
+      - dbdata:/var/lib/postgresql/data
+    env_file:
+      - ../backend/.env
+    environment:
+      POSTGRES_DB: foodgram
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+
+  backend:
+    container_name: foodgram-backend
+    build: ../backend
+    volumes:
+      - staticfiles:/app/staticfiles
+      - ../backend/:/app/
+    env_file:
+      - ../backend/.env
+    depends_on:
+      - db
+
+  frontend:
+    container_name: foodgram-front
+    build: ../frontend
+    volumes:
+      - ../frontend/:/app/result_build/
+
+  nginx:
+    container_name: foodgram-proxy
+    image: nginx:1.25.4-alpine
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf
+      - ../frontend/build:/usr/share/nginx/html/
+      - ../docs/:/usr/share/nginx/html/api/docs/
+      - staticfiles:/usr/share/nginx/html/staticfiles
+
+volumes:
+  staticfiles:
+  dbdata:
