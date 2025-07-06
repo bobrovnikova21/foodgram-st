@@ -1,35 +1,83 @@
-from django.db import models
+# users/models.py
 from django.contrib.auth.models import AbstractUser
+from django.core.validators import RegexValidator
+from django.db import models
 
-from recipes.models import Recipe
+USERNAME_REGEX = r'^[\w.@+-]+$'
 
 
 class User(AbstractUser):
-    """Расширенная модель пользователя с email и изображением профиля."""
-
-    email = models.EmailField(unique=True, verbose_name="Электронная почта")
-    avatar = models.TextField(blank=True, null=True, verbose_name="Изображение профиля")
-
-    favorites = models.ManyToManyField(
-        Recipe, blank=True, verbose_name="Любимые рецепты"
-    )
-    shopping_list = models.ManyToManyField(
-        Recipe,
+    """
+    Кастомный пользователь Foodgram.
+    Авторизуемся по e-mail, а не по username.
+    """
+    avatar = models.ImageField(
+        'Аватар',
+        upload_to='users/avatars/',
         blank=True,
-        related_name="included_in_shopping_list",
-        verbose_name="Список покупок",
+        null=True,
     )
-    followings = models.ManyToManyField(
-        "self",
-        blank=True,
-        symmetrical=False,
-        related_name="followers",
-        verbose_name="Подписки",
+    email = models.EmailField(
+        'E-mail',
+        max_length=254,
+        unique=True,
+        help_text='Используется как логин при входе',
+    )
+    username = models.CharField(
+        'Логин',
+        max_length=150,
+        unique=True,
+        validators=[
+            RegexValidator(
+                USERNAME_REGEX,
+                'Разрешены буквы, цифры и символы @/./+/-/_',
+            )
+        ],
+    )
+    first_name = models.CharField('Имя', max_length=150)
+    last_name = models.CharField('Фамилия', max_length=150)
+
+    USERNAME_FIELD = 'email'
+    REQUIRED_FIELDS = ['username', 'first_name', 'last_name']
+
+    class Meta:
+        ordering = ('username',)
+        verbose_name = 'Пользователь'
+        verbose_name_plural = 'Пользователи'
+
+    def __str__(self):
+        return self.username
+
+
+class Follow(models.Model):
+    """Подписка: user → author."""
+    user = models.ForeignKey(
+        User,
+        related_name='following',
+        on_delete=models.CASCADE,
+        verbose_name='Подписчик',
+    )
+    author = models.ForeignKey(
+        User,
+        related_name='followers',
+        on_delete=models.CASCADE,
+        verbose_name='Автор',
     )
 
     class Meta:
-        verbose_name = "Пользователь"
-        verbose_name_plural = "Пользователи"
+        constraints = [
+            models.UniqueConstraint(
+                fields=('user', 'author'),
+                name='unique_follow',
+            ),
+            models.CheckConstraint(
+                check=~models.Q(user=models.F('author')),
+                name='prevent_self_follow',
+            ),
+        ]
+        ordering = ('user__username', 'author__username')
+        verbose_name = 'Подписка'
+        verbose_name_plural = 'Подписки'
 
-    def __str__(self) -> str:
-        return self.username
+    def __str__(self):
+        return f'{self.user} → {self.author}'

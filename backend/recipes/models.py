@@ -1,62 +1,134 @@
+from django.conf import settings
 from django.db import models
+
+User = settings.AUTH_USER_MODEL
+
+
+class Ingredient(models.Model):
+    name = models.CharField("Название", max_length=100)
+    measurement_unit = models.CharField("Ед. измерения", max_length=50)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=("name", "measurement_unit"),
+                name="unique_ingredient",
+            ),
+        ]
+        indexes = [models.Index(fields=["name"])]
+        ordering = ("name",)
+        verbose_name = "Ингредиент"
+        verbose_name_plural = "Ингредиенты"
+
+    def __str__(self):
+        return f"{self.name} ({self.measurement_unit})"
 
 
 class Recipe(models.Model):
-    """Модель блюда с автором и списком ингредиентов."""
-
-    creator = models.ForeignKey(
-        "users.User", on_delete=models.CASCADE, verbose_name="Создатель"
+    author = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        related_name="recipes",
+        verbose_name="Автор",
     )
-    name = models.CharField(max_length=200, verbose_name="Название блюда")
-    image_url = models.TextField(
-        verbose_name="Ссылка на изображение", blank=True, null=True
+    name = models.CharField("Название", max_length=200)
+    image = models.ImageField(
+        "Фото блюда",
+        upload_to="recipes/images/",
+        blank=True,
     )
-    details = models.TextField(verbose_name="Описание рецепта")
-    components = models.ManyToManyField(
-        "Component", through="RecipeComponent", verbose_name="Состав"
+    text = models.TextField("Описание")
+    cooking_time = models.PositiveIntegerField("Время приготовления, мин")
+    ingredients = models.ManyToManyField(
+        Ingredient,
+        through="RecipeIngredient",
+        verbose_name="Ингредиенты",
     )
-    preparation_time = models.PositiveIntegerField(verbose_name="Время готовки")
+    pub_date = models.DateTimeField("Дата публикации", auto_now_add=True)
 
     class Meta:
-        ordering = ["-id"]
-        verbose_name = "Блюдо"
-        verbose_name_plural = "Блюда"
+        ordering = ("-pub_date",)
+        verbose_name = "Рецепт"
+        verbose_name_plural = "Рецепты"
 
     def __str__(self):
-        return f"{self.name} (Создатель: {self.creator.username})"
+        return self.name
 
 
-class Component(models.Model):
-    """Модель продукта с названием и единицей измерения."""
-
-    title = models.CharField(
-        max_length=100, unique=True, verbose_name="Название продукта"
+class RecipeIngredient(models.Model):
+    recipe = models.ForeignKey(
+        Recipe,
+        on_delete=models.CASCADE,
+        related_name="recipe_ingredients",
     )
-    measurement = models.CharField(max_length=50, verbose_name="Единица измерения")
+    ingredient = models.ForeignKey(
+        Ingredient,
+        on_delete=models.CASCADE,
+        related_name="ingredient_recipes",
+    )
+    amount = models.DecimalField("Количество", max_digits=7, decimal_places=2)
 
     class Meta:
-        ordering = ["title"]
-        verbose_name = "Продукт"
-        verbose_name_plural = "Продукты"
+        constraints = [
+            models.UniqueConstraint(
+                fields=("recipe", "ingredient"),
+                name="unique_recipe_ingredient",
+            ),
+        ]
+        verbose_name = "Ингредиент в рецепте"
+        verbose_name_plural = "Ингредиенты в рецептах"
 
-    def __str__(self) -> str:
-        return f"{self.title} ({self.measurement})"
+    def __str__(self):
+        return f"{self.ingredient} – {self.amount}"
 
 
-class RecipeComponent(models.Model):
-    """Связь между блюдами и их ингредиентами."""
-
-    dish = models.ForeignKey(Recipe, on_delete=models.CASCADE, verbose_name="Блюдо")
-    component = models.ForeignKey(
-        Component, on_delete=models.CASCADE, verbose_name="Продукт"
+class ShoppingCart(models.Model):
+    user = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        related_name="carts",
     )
-    quantity = models.DecimalField(
-        max_digits=6, decimal_places=2, verbose_name="Количество"
+    recipe = models.ForeignKey(
+        Recipe,
+        on_delete=models.CASCADE,
+        related_name="in_carts",
     )
 
     class Meta:
-        verbose_name = "Продукт в блюде"
-        verbose_name_plural = "Продукты в блюдах"
+        constraints = [
+            models.UniqueConstraint(
+                fields=("user", "recipe"),
+                name="unique_shopping_cart",
+            ),
+        ]
+        verbose_name = "Список покупок"
+        verbose_name_plural = "Списки покупок"
 
-    def __str__(self) -> str:
-        return f"{self.component.title} - {self.quantity} {self.component.measurement} для {self.dish.name}"
+    def __str__(self):
+        return f"{self.user} → {self.recipe}"
+
+
+class Favorite(models.Model):
+    user = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        related_name="favorites",
+    )
+    recipe = models.ForeignKey(
+        Recipe,
+        on_delete=models.CASCADE,
+        related_name="favorites",
+    )
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=("user", "recipe"),
+                name="unique_favorite",
+            ),
+        ]
+        verbose_name = "Избранное"
+        verbose_name_plural = "Избранное"
+
+    def __str__(self):
+        return f"{self.user} → {self.recipe}"
