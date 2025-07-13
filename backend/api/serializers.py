@@ -4,16 +4,13 @@ from django.contrib.auth import get_user_model
 from djoser.serializers import UserSerializer as BaseUserSerializer
 from drf_extra_fields.fields import Base64ImageField
 from rest_framework import serializers
-from rest_framework.exceptions import ValidationError as DRFValidationError
 
+from api.constants import MIN_VALUE, MAX_VALUE
 from recipes.models import (
     Ingredient,
     Recipe,
     RecipeIngredient,
-    Favorite,
-    ShoppingCart,
 )
-from users.models import Follow
 
 CustomUser = get_user_model()
 
@@ -44,10 +41,7 @@ class ExtendedUserSerializer(BaseUserSerializer):
         if not request or not request.user.is_authenticated:
             return False
         current_user = request.user
-        return Follow.objects.filter(
-            user=current_user,
-            author=target_user
-        ).exists()
+        return current_user.following.filter(author=target_user).exists()
 
 
 class IngredientDataSerializer(serializers.ModelSerializer):
@@ -67,7 +61,7 @@ class RecipeIngredientDetailSerializer(serializers.ModelSerializer):
     measurement_unit = serializers.CharField(
         source="ingredient.measurement_unit", read_only=True
     )
-    amount = serializers.IntegerField(read_only=True)
+    amount = serializers.DecimalField( max_digits=7, decimal_places=2, read_only=True, coerce_to_string=False )
 
     class Meta:
         model = RecipeIngredient
@@ -105,10 +99,7 @@ class RecipeDetailSerializer(serializers.ModelSerializer):
         if not request or not request.user.is_authenticated:
             return False
         current_user = request.user
-        return Favorite.objects.filter(
-            user=current_user,
-            recipe=recipe_obj
-        ).exists()
+        return current_user.favorites.filter(recipe=recipe_obj).exists()
 
     def check_cart_status(self, recipe_obj):
         """Проверяет, добавлен ли рецепт в корзину покупок."""
@@ -116,10 +107,7 @@ class RecipeDetailSerializer(serializers.ModelSerializer):
         if not request or not request.user.is_authenticated:
             return False
         current_user = request.user
-        return ShoppingCart.objects.filter(
-            user=current_user,
-            recipe=recipe_obj
-        ).exists()
+        return current_user.carts.filter(recipe=recipe_obj).exists()
 
 
 class RecipeIngredientInputSerializer(serializers.Serializer):
@@ -131,9 +119,11 @@ class RecipeIngredientInputSerializer(serializers.Serializer):
             'does_not_exist': 'Указанный ингредиент не существует.'}
     )
     amount = serializers.IntegerField(
-        min_value=1,
+        min_value=MIN_VALUE,
+        max_value=MAX_VALUE,
         error_messages={
-            'min_value': 'Количество ингредиента должно быть больше 0.',
+            'min_value': f'Количество ингредиента должно быть больше {MIN_VALUE}',
+            'max_value': f'Количество ингредиента не может быть больше {MAX_VALUE}.',
             'invalid': 'Количество должно быть числом.'
         }
     )
@@ -144,18 +134,19 @@ class RecipeCreateUpdateSerializer(serializers.ModelSerializer):
 
     ingredients = RecipeIngredientInputSerializer(many=True, write_only=True)
     image = Base64ImageField(write_only=True, required=True)
+    cooking_time = serializers.IntegerField(
+        min_value=MIN_VALUE,
+        max_value=MAX_VALUE,
+        error_messages={
+            'min_value': f'Время приготовления должно быть не менее {MIN_VALUE} минуты.',
+            'max_value': f'Время приготовления не может быть больше {MAX_VALUE} минут.',
+            'invalid': 'Время приготовления должно быть числом.'
+        }
+    )
 
     class Meta:
         model = Recipe
         fields = ("ingredients", "image", "name", "text", "cooking_time")
-
-    def validate_cooking_time(self, cooking_time_value):
-        """Валидация времени приготовления."""
-        if cooking_time_value < 1:
-            raise serializers.ValidationError(
-                'Время приготовления должно быть не менее 1 минуты'
-            )
-        return cooking_time_value
 
     def validate_ingredients(self, ingredients_list):
         """Валидация списка ингредиентов."""

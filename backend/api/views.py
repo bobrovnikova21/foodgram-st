@@ -230,36 +230,30 @@ class CustomUserViewSet(BaseUserViewSet):
 
         return self.get_paginated_response(subscription_serializer.data)
 
-    @action(detail=True, methods=('post', 'delete'),
-            serializer_class=UserWithRecipesSerializer,
-            permission_classes=[IsAuthenticated])
+    @action(
+    detail=True,
+    methods=('post', 'delete'),
+    serializer_class=UserWithRecipesSerializer,
+    permission_classes=[IsAuthenticated],
+)
     def subscribe(self, request, id=None):
-        """Подписка/отписка от автора."""
-        target_author = self.get_object()
+        """Подписаться / отписаться от автора (id берём из URL)."""
+        author = self.get_object()          
+        user = request.user               
+
+        if author == user:
+            raise ValidationError({'errors': 'Нельзя подписаться на себя'})
 
         if request.method == 'POST':
-            if target_author == request.user:
-                raise ValidationError(
-                    {'errors': 'Невозможно подписаться на себя'})
-
-            follow_obj, was_created = Follow.objects.get_or_create(
-                user=request.user, author=target_author
-            )
-
-            if not was_created:
+            if user.following.filter(author=author).exists():
                 raise ValidationError({'errors': 'Подписка уже существует'})
+            user.following.create(author=author)
 
-            return Response(
-                self.get_serializer(target_author).data,
-                status=status.HTTP_201_CREATED
-            )
+            serializer = self.get_serializer(author)
+            return Response(serializer.data, status=status.HTTP_201_CREATED)
 
-        existing_follow = Follow.objects.filter(
-            user=request.user, author=target_author
-        ).first()
-
-        if not existing_follow:
+        if not user.following.filter(author=author).exists():
             raise ValidationError({'errors': 'Подписка не найдена'})
 
-        existing_follow.delete()
+        user.following.filter(author=author).delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
